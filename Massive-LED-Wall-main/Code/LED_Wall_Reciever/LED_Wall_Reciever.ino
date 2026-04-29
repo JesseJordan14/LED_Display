@@ -96,8 +96,8 @@ void setup() {
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
 //-----------------------------------------------
-	// server address, port and URL
-	webSocket.begin("10.0.0.121", 81, "/");
+	// server address, port and URL — LMCSHD PC, configured via secrets.h
+	webSocket.begin(PC_IP, PC_PORT, "/");
 	// event handler
 	webSocket.onEvent(webSocketEvent);
   // try again if connection has failed
