@@ -17,11 +17,8 @@ WebSocketsServer webSocket = WebSocketsServer(81);
 #define WIDTH 32
 #define HEIGHT 32
 #define NUM_PANELS 2
-#define PANEL_WIDTH (WIDTH / NUM_PANELS)
 const int NUM_LEDS = WIDTH * HEIGHT;
 const int PANEL_BYTES = (NUM_LEDS / NUM_PANELS) * 2;
-const int FRAME_BYTES = NUM_LEDS * 2;
-char fullFrame[FRAME_BYTES];
 char panel1[PANEL_BYTES];
 char panel2[PANEL_BYTES];
 //-----------------------------------------------
@@ -142,30 +139,10 @@ void loop() {
       Serial.println(HEIGHT);
       break;
     case 0x42: // Read frame data
-      // Read the entire 32x32 frame from LMCSHD as one block.
-      // LMCSHD orientation: horizontal, origin bottom-right, snake.
-      Serial.readBytes(fullFrame, FRAME_BYTES);
-
-      // Demux into per-panel buffers. Each receiver expects its 16x32 region
-      // in the same horizontal/bottom-right/snake order that one panel uses.
-      // Local index kL -> row r (from bottom), col c (within row).
-      // For the LEFT panel (global x in [0,15]):
-      //   even row (right-to-left): global col = (PANEL_WIDTH + c)
-      //   odd  row (left-to-right): global col = c
-      // For the RIGHT panel (global x in [16,31]) the cases swap.
-      for (int kL = 0; kL < NUM_LEDS / NUM_PANELS; kL++) {
-        int r = kL / PANEL_WIDTH;
-        int c = kL % PANEL_WIDTH;
-        bool evenRow = ((r & 1) == 0);
-        int gColLeft  = evenRow ? (PANEL_WIDTH + c) : c;
-        int gColRight = evenRow ? c : (PANEL_WIDTH + c);
-        int kGleft  = r * WIDTH + gColLeft;
-        int kGright = r * WIDTH + gColRight;
-        panel1[2*kL]     = fullFrame[2*kGleft];
-        panel1[2*kL + 1] = fullFrame[2*kGleft + 1];
-        panel2[2*kL]     = fullFrame[2*kGright];
-        panel2[2*kL + 1] = fullFrame[2*kGright + 1];
-      }
+      // LMCSHD's section-aware output emits each panel's bytes already in
+      // its receiver's local serpentine order, so we just pass them through.
+      Serial.readBytes(panel1, PANEL_BYTES);
+      Serial.readBytes(panel2, PANEL_BYTES);
 
       webSocket.sendTXT(screen1, (char *)panel1, PANEL_BYTES);
       webSocket.sendTXT(screen2, (char *)panel2, PANEL_BYTES);
