@@ -1,0 +1,19 @@
+# Real secrets — keep local, never commit
+secrets.h
+
+# OS junk
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# .NET / Visual Studio (for future LMCSHD fork work)
+bin/
+obj/
+.vs/
+*.user
