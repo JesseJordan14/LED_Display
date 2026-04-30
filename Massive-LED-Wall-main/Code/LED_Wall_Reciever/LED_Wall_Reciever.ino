@@ -34,16 +34,40 @@ const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASSWORD;
 //-----------------------------------------------
 
-/*****************************************************************    
+/*****************************************************************
+ *    decodeBPP16AndShow()
+ *
+ *    Unpack 5-6-5 RGB pixels from `payload` into the FastLED buffer
+ *    and push to the display. Called from both WStype_TEXT (legacy
+ *    source-ESP path, which ships binary over text frames) and
+ *    WStype_BIN (LMCSHD direct-to-receiver path, which uses proper
+ *    binary frames). Sends a single 0x06 ack byte back to the server
+ *    after FastLED.show() so the PC can throttle frame production
+ *    to the slowest receiver and keep panels in lockstep.
+ *****************************************************************/
+void decodeBPP16AndShow(uint8_t *payload) {
+  for (int i = 0; i < NUM_LEDS; i++){
+    int red = *(payload + (2*i)) >> 3;
+    int green = ((*(payload + (2*i)) & 0x07) << 3) | (*(payload + (2*i) + 1) >> 5);
+    int blue = *(payload + (2*i) + 1) & 0x1F;
+    leds[i].r = map(red, 0, PAYLOAD_MAX, 0, MAX_BRIGHTNESS);
+    leds[i].g = map(green, 0, PAYLOAD_MAX_G, 0, MAX_BRIGHTNESS);
+    leds[i].b = map(blue, 0, PAYLOAD_MAX, 0, MAX_BRIGHTNESS);
+  }
+  FastLED.show();
+  uint8_t ack = 0x06;
+  webSocket.sendBIN(&ack, 1);
+}
+
+/*****************************************************************
  *    webSocketEvent()
  *    Parameters: WStype_t type, uint8_t * payload, size_t length
  *    Returns: void
- * 
- *    On connection the server will ask "Who?" and expect a 
- *    response with the device number.
- *    Receives data from the server as a payload,
- *    then store that data into the LED array buffer before
- *    pushing the pixel data to the display.
+ *
+ *    On connection the server asks "Who?" and expects a "Device N"
+ *    text reply. Frame data arrives as either TEXT (legacy source
+ *    ESP path) or BIN (LMCSHD direct path); both are decoded the
+ *    same way.
  *****************************************************************/
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t welength) {
   switch(type) {
@@ -58,15 +82,10 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t welength) {
         webSocket.sendTXT(DEVICE_MSG);
         return;
       }
-      for (int i = 0; i < NUM_LEDS; i++){
-        int red = *(payload + (2*i)) >> 3;
-        int green = ((*(payload + (2*i)) & 0x07) << 3) | (*(payload + (2*i) + 1) >> 5);
-        int blue = *(payload + (2*i) + 1) & 0x1F;
-        leds[i].r = map(red, 0, PAYLOAD_MAX, 0, MAX_BRIGHTNESS);
-        leds[i].g = map(green, 0, PAYLOAD_MAX_G, 0, MAX_BRIGHTNESS);
-        leds[i].b = map(blue, 0, PAYLOAD_MAX, 0, MAX_BRIGHTNESS);
-      }
-      FastLED.show();
+      decodeBPP16AndShow(payload);
+      break;
+    case WStype_BIN:
+      decodeBPP16AndShow(payload);
       break;
     default:
       break;
