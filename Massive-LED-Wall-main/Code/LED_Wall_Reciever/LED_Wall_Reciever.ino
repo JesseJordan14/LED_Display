@@ -38,12 +38,11 @@ const char* password = WIFI_PASSWORD;
  *    decodeBPP16AndShow()
  *
  *    Unpack 5-6-5 RGB pixels from `payload` into the FastLED buffer
- *    and push to the display. Called from both WStype_TEXT (legacy
- *    source-ESP path, which ships binary over text frames) and
- *    WStype_BIN (LMCSHD direct-to-receiver path, which uses proper
- *    binary frames). Sends a single 0x06 ack byte back to the server
- *    after FastLED.show() so the PC can throttle frame production
- *    to the slowest receiver and keep panels in lockstep.
+ *    and push to the display. Called from WStype_BIN (LMCSHD sends
+ *    pixel data as proper binary frames). Sends a single 0x06 ack
+ *    byte back to the server after FastLED.show() so the PC can
+ *    throttle frame production to the slowest receiver and keep
+ *    panels in lockstep.
  *****************************************************************/
 void decodeBPP16AndShow(uint8_t *payload) {
   for (int i = 0; i < NUM_LEDS; i++){
@@ -65,9 +64,8 @@ void decodeBPP16AndShow(uint8_t *payload) {
  *    Returns: void
  *
  *    On connection the server asks "Who?" and expects a "Device N"
- *    text reply. Frame data arrives as either TEXT (legacy source
- *    ESP path) or BIN (LMCSHD direct path); both are decoded the
- *    same way.
+ *    text reply. Pixel frames arrive as binary (WStype_BIN); text
+ *    frames are reserved for the handshake.
  *****************************************************************/
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t welength) {
   switch(type) {
@@ -78,11 +76,8 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t welength) {
       Serial.printf("[WSc] Connected as " DEVICE_MSG "\n");
       break;
     case WStype_TEXT:
-      if (strcmp((char *)payload, "Who?") == 0){
+      if (strcmp((char *)payload, "Who?") == 0)
         webSocket.sendTXT(DEVICE_MSG);
-        return;
-      }
-      decodeBPP16AndShow(payload);
       break;
     case WStype_BIN:
       decodeBPP16AndShow(payload);
