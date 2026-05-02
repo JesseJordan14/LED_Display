@@ -13,7 +13,11 @@
 
 #define _STR_HELPER(x) #x
 #define _STR(x) _STR_HELPER(x)
-#define DEVICE_MSG "Device " _STR(DEVICE_NUM)
+// Reply format on connect: "Device <num> <W>x<H>" — LMCSHD parses both pieces
+// to know which slot the connection claims AND the panel's pixel dimensions
+// (Feature 6.9). WIDTH and HEIGHT come from the FastLED globals defined
+// below; the macro indirection forces them to expand before stringification.
+#define DEVICE_MSG "Device " _STR(DEVICE_NUM) " " _STR(WIDTH) "x" _STR(HEIGHT)
 
 WebSocketsClient webSocket;
 #define PAYLOAD_MAX 0x1F
@@ -28,6 +32,19 @@ WebSocketsClient webSocket;
 
 const int NUM_LEDS = WIDTH * HEIGHT;
 CRGB leds[NUM_LEDS];
+
+/* Feature 6.8 (abandoned 2026-05-01) — app-level watchdog tracking the time
+ * since the last received WS message. Paired with an LMCSHD-side keepalive
+ * timer pushing every 1s. Worked for LMCSHD-crash detection but didn't fire
+ * on Windows hibernate (suspect: OS keeps the NIC awake enough that LMCSHD's
+ * pre-hibernate frame queue still gets transmitted, then no further detection
+ * triggers). Abandoned per user request; hibernate now leaves the wall in
+ * its last state until something else trips a disconnect. Left commented as
+ * a starting point if revisited.
+ *
+ * unsigned long lastDataTime = 0;
+ * const unsigned long DATA_TIMEOUT_MS = 3000;
+ */
 //-----------------------------------------------
 #include "secrets.h"
 const char* ssid = WIFI_SSID;
@@ -71,15 +88,26 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t welength) {
   switch(type) {
     case WStype_DISCONNECTED:
       Serial.println("[WSc] Disconnected from server");
+      // Belt-and-suspenders blank: covers cases where LMCSHD didn't get a
+      // chance to push a black frame before the connection died (hard PC
+      // shutdown, sleep, crash, network glitch). LMCSHD blanks proactively
+      // on lock/sleep/disconnect — this just guarantees the wall goes dark
+      // even when the PC-side handler couldn't run.
+      FastLED.clear();
+      FastLED.show();
+      // lastDataTime = 0;  // Feature 6.8 (abandoned)
       break;
     case WStype_CONNECTED:
       Serial.printf("[WSc] Connected as " DEVICE_MSG "\n");
+      // lastDataTime = millis();  // Feature 6.8 (abandoned)
       break;
     case WStype_TEXT:
+      // lastDataTime = millis();  // Feature 6.8 (abandoned)
       if (strcmp((char *)payload, "Who?") == 0)
         webSocket.sendTXT(DEVICE_MSG);
       break;
     case WStype_BIN:
+      // lastDataTime = millis();  // Feature 6.8 (abandoned)
       decodeBPP16AndShow(payload);
       break;
     default:
@@ -116,6 +144,17 @@ void setup() {
 	webSocket.onEvent(webSocketEvent);
   // try again if connection has failed
   webSocket.setReconnectInterval(5000);
+
+  /* Feature 6.8 (abandoned 2026-05-01) — WS-protocol heartbeat. Was meant
+   * to detect silent failures by pinging the server periodically and
+   * disconnecting when pongs stopped arriving. In practice it didn't fire
+   * on Windows hibernate (suspect: OS keeps the WiFi NIC alive enough to
+   * make the WS pings appear to succeed even though no app is running on
+   * the PC to actually pong them). Combined with the v2 app-level watchdog,
+   * still didn't blank the wall on hibernate. Abandoned per user request.
+   *
+   * webSocket.enableHeartbeat(5000, 2000, 2);
+   */
 //-----------------------------------------------
   leds[0].r = 100;
   FastLED.show();
@@ -127,4 +166,16 @@ void setup() {
  *****************************************************************/
 void loop() {
 	webSocket.loop();
+
+	/* Feature 6.8 (abandoned 2026-05-01) — app-level liveness check. See
+	 * the globals comment near the top of the file for rationale.
+	 *
+	 * if (lastDataTime != 0 && (millis() - lastDataTime) > DATA_TIMEOUT_MS) {
+	 *   Serial.println("[WS] Data watchdog timeout — disconnecting and blanking");
+	 *   FastLED.clear();
+	 *   FastLED.show();
+	 *   webSocket.disconnect();
+	 *   lastDataTime = 0;
+	 * }
+	 */
 }
